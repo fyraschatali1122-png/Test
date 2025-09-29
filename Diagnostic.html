@@ -1,0 +1,209 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Dienstplan – Diagnose</title>
+<link href="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.11/index.global.min.css" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.11/index.global.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@fullcalendar/core@6.1.11/locales-all.global.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+<style>
+  body{margin:0;font:16px/1.5 system-ui,Segoe UI,Roboto;background:#0f172a;color:#e5e7eb}
+  header,section{max-width:1100px;margin:0 auto;padding:16px}
+  .card{background:#111827;border:1px solid #1f2937;border-radius:12px;padding:14px;margin:12px 0}
+  .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  input,button,select{padding:10px;border-radius:8px;border:1px solid #334155;background:#0b1220;color:#e5e7eb}
+  button{background:#0ea5e9;border:0;cursor:pointer}
+  .ok{color:#22c55e}.err{color:#ef4444}.muted{color:#9aa3b2}
+  table{width:100%;border-collapse:collapse} th,td{padding:8px;border-bottom:1px solid #1f2937;text-align:left}
+  #calendar .fc{height:600px}
+</style>
+</head>
+<body>
+<header>
+  <h1>Diagnose: Dienstplan + Wünsche</h1>
+  <p class="muted">Erst URLs unten ausfüllen → dann auf „Tests starten“ klicken.</p>
+</header>
+
+<section class="card">
+  <h2>1) Konfiguration</h2>
+  <div class="row">
+    <label>CSV_URL</label>
+    <input id="cfgCsv" style="min-width:520px" placeholder="https://docs.google.com/spreadsheets/d/e/2PACX-1vTOuHwb0HGELAZhFI3d4vrmWxevqbwwzPgTIOD8TIGII_x7oSsJleuGLdX4cYb5V373IX_Rn1RPrh_Q/pub?gid=569786249&single=true&output=csv">
+  </div>
+  <div class="row">
+    <label>WEBAPP_URL</label>
+    <input id="cfgGas" style="min-width:520px" placeholder="https://script.google.com/macros/s/AKfycbzjLpFTbPsrye8ZbxS0Wiqgyusw9FWYcVk3hM6buVBnuTMsBR36pTfyXurRFUK1I0iK2w/exec">
+  </div>
+  <div class="row">
+    <button id="btnRun">Tests starten</button>
+  </div>
+</section>
+
+<section class="card" id="status">
+  <h2>2) Ergebnisse</h2>
+  <div id="csvStatus">CSV: <span class="muted">noch nicht getestet</span></div>
+  <div id="gasStatus">WebApp: <span class="muted">noch nicht getestet</span></div>
+</section>
+
+<section class="card">
+  <h2>3) Liste aus CSV</h2>
+  <table>
+    <thead><tr><th>Datum</th><th>Beginn</th><th>Ende</th><th>Name</th><th>Code</th></tr></thead>
+    <tbody id="tbody"></tbody>
+  </table>
+</section>
+
+<section class="card" id="calendarSection" style="display:none">
+  <h2>4) Kalender</h2>
+  <div id="calendar"></div>
+</section>
+
+<section class="card">
+  <h2>5) Wünsche testen</h2>
+  <div class="row">
+    <input id="wName" placeholder="Dein Name">
+    <input id="wDate" type="date">
+    <input id="wCode" placeholder="Code (EF/ES/SN/...)">
+    <input id="wNote" placeholder="Notiz (optional)">
+    <button id="wSend">Anfrage senden</button>
+  </div>
+  <h3>Offene Anfragen</h3>
+  <ul id="wList"></ul>
+</section>
+
+<script>
+let CSV_URL = "";
+let WEBAPP_URL = "";
+let calendar = null;
+let ALL = [];
+
+const $ = s => document.querySelector(s);
+
+function setCsvStatus(ok, msg){
+  $("#csvStatus").innerHTML = "CSV: " + (ok ? `<span class="ok">OK</span>` : `<span class="err">FEHLER</span>`) + (msg?` — ${msg}`:"");
+}
+function setGasStatus(ok, msg){
+  $("#gasStatus").innerHTML = "WebApp: " + (ok ? `<span class="ok">OK</span>` : `<span class="err">FEHLER</span>`) + (msg?` — ${msg}`:"");
+}
+
+function padTime(t){ if(!t) return ""; const p=String(t).split(":"); return (p[0]||"").padStart(2,"0")+":"+(p[1]||"00").padStart(2,"0"); }
+function mapCode(code){
+  const c=(code||"").toUpperCase();
+  if(["EF","FN"].includes(c)) return "Frühschicht";
+  if(["ES","SN"].includes(c)) return "Spätschicht";
+  if(["K2N","AK2","AKN"].includes(c)) return "Nachtschicht";
+  if(["U","O"].includes(c)) return "Urlaub";
+  if(c==="AV") return "Frei";
+  return code||"";
+}
+
+function renderList(list){
+  const tb = $("#tbody"); tb.innerHTML = "";
+  list.forEach(r=>{
+    const tr=document.createElement("tr");
+    tr.innerHTML = `<td>${r.Date||r.Datum||""}</td><td>${r.Start||r.Beginn||""}</td><td>${r.End||r.Ende||""}</td><td>${r.Name||""}</td><td>${r.Code||r.Dienst||""}</td>`;
+    tb.appendChild(tr);
+  });
+}
+
+function renderCalendarFrom(list){
+  const events = list.map(r=>{
+    const date = r.Date || r.Datum;
+    const start = r.Start || r.Beginn;
+    const end   = r.End   || r.Ende;
+    const title = `${r.Name||""} (${r.Code||r.Dienst||""})`;
+    if(!date) return null;
+    if(!start) return { title, start: date, allDay:true };
+    const startISO = `${date}T${padTime(start)}`;
+    const endISO = end ? `${date}T${padTime(end)}` : null;
+    return { title, start: startISO, end: endISO || undefined };
+  }).filter(Boolean);
+
+  const el = document.getElementById('calendar');
+  if (!calendar) {
+    calendar = new FullCalendar.Calendar(el, {
+      initialView: 'dayGridMonth',
+      locale: 'de',
+      firstDay: 1,
+      headerToolbar: { left:'prev,next today', center:'title', right:'dayGridMonth,timeGridWeek,timeGridDay' },
+      events
+    });
+    calendar.render();
+  } else {
+    calendar.removeAllEvents();
+    calendar.addEventSource(events);
+    calendar.render();
+  }
+  document.getElementById('calendarSection').style.display = '';
+}
+
+async function testCSV(){
+  if (!CSV_URL || !CSV_URL.includes('output=csv')) {
+    setCsvStatus(false, 'Bitte gültige CSV URL (muss mit output=csv enden)');
+    return;
+  }
+  try{
+    const res = await fetch(CSV_URL,{cache:'no-store'});
+    if(!res.ok){ setCsvStatus(false, 'HTTP '+res.status); return; }
+    const text = await res.text();
+    const parsed = Papa.parse(text,{header:true,skipEmptyLines:true});
+    ALL = parsed.data.filter(r => (r.Date||r.Datum||"").trim());
+    renderList(ALL);
+    renderCalendarFrom(ALL.slice(0,300)); // éviter surcharge si gros CSV
+    setCsvStatus(true, `Zeilen: ${ALL.length}`);
+  }catch(e){
+    setCsvStatus(false, e.message);
+  }
+}
+
+async function loadRequests(){
+  if(!WEBAPP_URL){ setGasStatus(false, 'WEBAPP_URL leer'); return; }
+  try{
+    const res = await fetch(`${WEBAPP_URL}?action=requests&status=open&t=${Date.now()}`, {cache:'no-store'});
+    const j = await res.json();
+    if(!j.ok){ setGasStatus(false, j.error||'API Fehler'); return; }
+    const ul = $("#wList"); ul.innerHTML="";
+    (j.items||[]).forEach(it=>{
+      const li=document.createElement('li');
+      li.textContent = `${it.date} — ${it.name} (${it.code||''}) ${it.note?'- '+it.note:''}`;
+      ul.appendChild(li);
+    });
+    setGasStatus(true, `Offene: ${(j.items||[]).length}`);
+  }catch(e){
+    setGasStatus(false, e.message);
+  }
+}
+
+async function sendRequest(){
+  if(!WEBAPP_URL){ alert('WEBAPP_URL fehlt'); return; }
+  const name=$("#wName").value.trim();
+  const date=$("#wDate").value;
+  const code=$("#wCode").value.trim();
+  const note=$("#wNote").value.trim();
+  if(!name||!date||!code){ alert('Name, Datum und Code sind Pflicht.'); return; }
+  try{
+    const url = `${WEBAPP_URL}?action=add&name=${encodeURIComponent(name)}&date=${encodeURIComponent(date)}&code=${encodeURIComponent(code)}&note=${encodeURIComponent(note)}&t=${Date.now()}`;
+    const r = await fetch(url);
+    const j = await r.json();
+    if(!j.ok){ alert('Fehler: '+(j.error||'')); return; }
+    $("#wNote").value="";
+    await loadRequests();
+    alert('Anfrage gespeichert (ID: '+j.id+')');
+  }catch(e){
+    alert('Fehler: '+e.message);
+  }
+}
+
+// UI
+document.getElementById('btnRun').addEventListener('click', async ()=>{
+  CSV_URL   = document.getElementById('cfgCsv').value.trim();
+  WEBAPP_URL= document.getElementById('cfgGas').value.trim();
+  await testCSV();
+  await loadRequests();
+});
+document.getElementById('wSend').addEventListener('click', sendRequest);
+</script>
+</body>
+</html>
