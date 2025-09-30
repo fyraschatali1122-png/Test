@@ -1,4 +1,4 @@
-<!doctype html>
+  <!doctype html>
 <html lang="de">
 <head>
   <meta charset="utf-8" />
@@ -7,10 +7,10 @@
 
   <!-- FullCalendar -->
   <link href="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.11/index.global.min.css" rel="stylesheet">
-  <script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.11/index.global.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.11/index.global.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@fullcalendar/core@6.1.11/locales-all.global.min.js"></script>
 
-  <!-- PapaParse pour CSV -->
+  <!-- PapaParse (CSV) -->
   <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
 
   <style>
@@ -18,8 +18,15 @@
       --bg:#0f172a; --panel:#0b1220; --card:#111827; --muted:#9aa3b2; --text:#e5e7eb;
       --line:#1f2937; --brand:#0ea5e9; --ok:#16a34a; --bad:#ef4444;
       --radius:14px; --radius-sm:10px;
+      /* couleurs des dienst */
+      --frueh:#22c55e;    /* vert */
+      --spaet:#60a5fa;    /* bleu */
+      --nacht:#f59e0b;    /* orange */
+      --urlaub:#a78bfa;   /* violet */
+      --frei:#94a3b8;     /* gris */
     }
-    *{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--text);font:15px/1.5 system-ui,Segoe UI,Inter,Roboto,sans-serif}
+    *{box-sizing:border-box}
+    body{margin:0;background:var(--bg);color:var(--text);font:15px/1.5 system-ui,Segoe UI,Inter,Roboto,sans-serif}
     .wrap{max-width:1200px;margin:0 auto;padding:18px}
     h1{margin:0 0 12px;font-size:26px}
     .grid{display:grid;grid-template-columns:1.4fr .6fr;gap:16px}
@@ -28,12 +35,28 @@
     .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
     input,select,button,textarea{background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:var(--radius-sm);padding:10px 12px}
     button{cursor:pointer;background:var(--brand);border:none;font-weight:700}
-    table{width:100%;border-collapse:collapse} th,td{padding:8px;border-bottom:1px solid var(--line);text-align:left}
     .muted{color:var(--muted)}
     #calendar .fc{min-height:620px}
+    /* badges légende */
+    .legend{display:flex;gap:8px;flex-wrap:wrap}
+    .badge{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);background:var(--panel);padding:6px 10px;border-radius:999px;font-size:13px}
+    .dot{width:10px;height:10px;border-radius:50%}
+    .dot.frueh{background:var(--frueh)}
+    .dot.spaet{background:var(--spaet)}
+    .dot.nacht{background:var(--nacht)}
+    .dot.urlaub{background:var(--urlaub)}
+    .dot.frei{background:var(--frei)}
+    /* styles des événements (classe ajoutée depuis JS) */
+    .fc-event.frueh{background:var(--frueh);border-color:var(--frueh)}
+    .fc-event.spaet{background:var(--spaet);border-color:var(--spaet)}
+    .fc-event.nacht{background:var(--nacht);border-color:var(--nacht)}
+    .fc-event.urlaub{background:var(--urlaub);border-color:var(--urlaub)}
+    .fc-event.frei{background:var(--frei);border-color:var(--frei)}
+
     .req-item{display:flex;justify-content:space-between;gap:8px;align-items:center;padding:8px;border:1px solid var(--line);border-radius:10px;margin:6px 0;background:var(--panel)}
     .req-info{display:flex;flex-direction:column}
-    .chip{font-size:12px;color:#d1d5db}
+    /* cacher la table CSV */
+    #csvSection{display:none}
   </style>
 </head>
 <body>
@@ -41,31 +64,41 @@
     <h1>📅 Dienstplan – Kalender & Wünsche</h1>
 
     <div class="grid">
-      <!-- COLONNE GAUCHE : CALENDRIER + TABLE -->
+      <!-- COLONNE GAUCHE : CALENDRIER (+ table cachée) -->
       <section class="card">
         <div class="row" style="justify-content:space-between">
           <h2 style="margin:0">Kalender</h2>
-          <div class="row">
-            <input id="filterName" placeholder="Name filtern…" />
-            <select id="filterCode">
-              <option value="">Alle</option>
-              <option value="Frühschicht">Frühschicht</option>
-              <option value="Spätschicht">Spätschicht</option>
-              <option value="Nachtschicht">Nachtschicht</option>
-              <option value="Urlaub">Urlaub</option>
-              <option value="Frei">Frei</option>
-            </select>
-            <button id="btnReset">Zurücksetzen</button>
+          <div class="legend">
+            <span class="badge"><span class="dot frueh"></span> Früh</span>
+            <span class="badge"><span class="dot spaet"></span> Spät</span>
+            <span class="badge"><span class="dot nacht"></span> Nacht</span>
+            <span class="badge"><span class="dot urlaub"></span> Urlaub</span>
+            <span class="badge"><span class="dot frei"></span> Frei</span>
           </div>
+        </div>
+        <div class="row" style="margin:8px 0 12px">
+          <input id="filterName" placeholder="Name filtern…" />
+          <select id="filterCode">
+            <option value="">Alle</option>
+            <option value="Frühschicht">Frühschicht</option>
+            <option value="Spätschicht">Spätschicht</option>
+            <option value="Nachtschicht">Nachtschicht</option>
+            <option value="Urlaub">Urlaub</option>
+            <option value="Frei">Frei</option>
+          </select>
+          <button id="btnReset">Zurücksetzen</button>
         </div>
         <div id="calendar"></div>
 
-        <h3 style="margin:16px 0 8px">Tabelle (aus CSV)</h3>
-        <div style="overflow:auto">
-          <table>
-            <thead id="csvHead"></thead>
-            <tbody id="csvBody"></tbody>
-          </table>
+        <!-- Table CSV cachée (utile pour debug) -->
+        <div id="csvSection">
+          <h3 style="margin:16px 0 8px">Tabelle (aus CSV)</h3>
+          <div style="overflow:auto">
+            <table>
+              <thead id="csvHead"></thead>
+              <tbody id="csvBody"></tbody>
+            </table>
+          </div>
         </div>
       </section>
 
@@ -75,6 +108,9 @@
 
         <h3 style="margin:8px 0">Offene Anfragen</h3>
         <div id="reqList" class="muted"></div>
+
+        <h3 style="margin:16px 0 8px">Angenommene Anfragen</h3>
+        <div id="reqAcceptedList" class="muted"></div>
 
         <hr style="border:0;border-top:1px solid var(--line);margin:12px 0" />
 
@@ -97,12 +133,12 @@
         <div class="row" style="margin-top:10px">
           <button id="btnSendReq">Anfrage senden</button>
         </div>
-        <p class="muted" style="margin-top:10px">Die Liste oben lädt automatisch nach dem Senden.</p>
+        <p class="muted" style="margin-top:10px">Akzeptierte Anfragen zeigen den Namen des Übernehmers und die Uhrzeit.</p>
       </aside>
     </div>
   </div>
 
-  <!-- ordre important : config.js puis script.js -->
+  <!-- ordre important : config puis script -->
   <script src="config.js"></script>
   <script src="script.js"></script>
 </body>
