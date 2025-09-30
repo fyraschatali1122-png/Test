@@ -3,128 +3,81 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Dienstplan – Klinikboard</title>
+  <title>Dienstplan – Kalender & Wünsche</title>
 
-  <!-- FullCalendar (optionnel, déjà prêt si tu veux l’activer plus tard dans script.js) -->
+  <!-- FullCalendar -->
   <link href="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.11/index.global.min.css" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.11/index.global.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@fullcalendar/core@6.1.11/locales-all.global.min.js"></script>
 
-  <!-- Style moderne (dark, responsive) -->
+  <!-- PapaParse pour CSV -->
+  <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+
   <style>
     :root{
       --bg:#0f172a; --panel:#0b1220; --card:#111827; --muted:#9aa3b2; --text:#e5e7eb;
-      --line:#1f2937; --brand:#0ea5e9; --ok:#16a34a; --bad:#ef4444; --warn:#f59e0b;
+      --line:#1f2937; --brand:#0ea5e9; --ok:#16a34a; --bad:#ef4444;
       --radius:14px; --radius-sm:10px;
     }
-    *{box-sizing:border-box}
-    body{margin:0;background:var(--bg);color:var(--text);font:15px/1.5 system-ui,Segoe UI,Roboto,Inter,sans-serif}
-    a{color:var(--brand);text-decoration:none}
-    .wrap{max-width:1200px;margin:0 auto;padding:20px}
-    header.hero{display:flex;gap:16px;align-items:center;justify-content:space-between;margin-bottom:16px}
-    h1{font-size:26px;margin:0}
-    .pill{display:inline-flex;gap:8px;align-items:center;padding:8px 12px;border:1px solid var(--line);border-radius:999px;background:var(--panel);color:var(--muted);font-weight:600}
-    .pill .dot{width:8px;height:8px;border-radius:50%}
-    .dot.ok{background:var(--ok)} .dot.bad{background:var(--bad)} .dot.wait{background:var(--warn)}
-    .grid{display:grid;grid-template-columns:1.2fr 0.8fr;gap:16px}
+    *{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--text);font:15px/1.5 system-ui,Segoe UI,Inter,Roboto,sans-serif}
+    .wrap{max-width:1200px;margin:0 auto;padding:18px}
+    h1{margin:0 0 12px;font-size:26px}
+    .grid{display:grid;grid-template-columns:1.4fr .6fr;gap:16px}
     @media (max-width:1000px){ .grid{grid-template-columns:1fr} }
-
-    .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:16px}
-    .card h2{margin:0 0 10px;font-size:18px}
-    .muted{color:var(--muted)}
-    .row{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
-    input,select,button,textarea{
-      background:var(--panel);color:var(--text);border:1px solid var(--line);
-      border-radius:var(--radius-sm);padding:10px 12px
-    }
-    input::placeholder,textarea::placeholder{color:#7c8aa0}
+    .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:14px}
+    .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+    input,select,button,textarea{background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:var(--radius-sm);padding:10px 12px}
     button{cursor:pointer;background:var(--brand);border:none;font-weight:700}
-    button.ghost{background:transparent;border:1px solid var(--line)}
-    table{width:100%;border-collapse:collapse}
-    th,td{padding:10px;border-bottom:1px solid var(--line);text-align:left}
-    th{color:#cbd5e1;font-weight:700}
-    .toolbar{display:flex;gap:8px;flex-wrap:wrap;margin:6px 0 12px}
-    .kpi{display:flex;gap:12px;flex-wrap:wrap}
-    .kpi .chip{padding:6px 10px;border:1px solid var(--line);border-radius:999px;background:var(--panel)}
-    .section-title{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
-    .hint{font-size:12px;color:var(--muted)}
-    .footer{margin-top:18px;color:var(--muted);text-align:center;font-size:12px}
-    /* calendrier placeholder */
-    #calendar{min-height:520px;border:1px dashed var(--line);border-radius:var(--radius);display:flex;align-items:center;justify-content:center;color:var(--muted)}
+    table{width:100%;border-collapse:collapse} th,td{padding:8px;border-bottom:1px solid var(--line);text-align:left}
+    .muted{color:var(--muted)}
+    #calendar .fc{min-height:620px}
+    .req-item{display:flex;justify-content:space-between;gap:8px;align-items:center;padding:8px;border:1px solid var(--line);border-radius:10px;margin:6px 0;background:var(--panel)}
+    .req-info{display:flex;flex-direction:column}
+    .chip{font-size:12px;color:#d1d5db}
   </style>
 </head>
 <body>
   <div class="wrap">
+    <h1>📅 Dienstplan – Kalender & Wünsche</h1>
 
-    <!-- En-tête -->
-    <header class="hero">
-      <h1>📅 Dienstplan – Klinikboard</h1>
-      <div class="row">
-        <!-- Petits statuts dynamiques (remplis par script.js au besoin) -->
-        <span class="pill" id="statusCsv"><span class="dot wait"></span> CSV</span>
-        <span class="pill" id="statusApi"><span class="dot wait"></span> WebApp</span>
-      </div>
-    </header>
-
-    <!-- Bandeau d’infos -->
-    <div class="card" style="margin-bottom:14px">
-      <div class="row" style="justify-content:space-between;align-items:flex-start;gap:12px">
-        <div>
-          <div class="kpi">
-            <span class="chip" id="kpiRows">Zeilen: –</span>
-            <span class="chip" id="kpiOpen">Offene Wünsche: –</span>
-          </div>
-          <div class="hint">Quelle des Plans: Google Sheets (CSV). Wünsche: Google Apps Script WebApp.</div>
-        </div>
-        <div class="toolbar">
-          <a class="ghost button" href="diagnostic.html" style="display:inline-block;padding:10px 12px;border-radius:10px">🔧 Diagnose</a>
-        </div>
-      </div>
-    </div>
-
-    <!-- Grille principale -->
     <div class="grid">
-      <!-- Colonne gauche : Planning -->
+      <!-- COLONNE GAUCHE : CALENDRIER + TABLE -->
       <section class="card">
-        <div class="section-title">
-          <h2>Dienstplan</h2>
+        <div class="row" style="justify-content:space-between">
+          <h2 style="margin:0">Kalender</h2>
           <div class="row">
-            <!-- filtres visuels (optionnels ; à brancher plus tard si tu veux) -->
-            <input id="fName" placeholder="Name…" />
-            <select id="fCode">
-              <option value="">Alle Dienste</option>
+            <input id="filterName" placeholder="Name filtern…" />
+            <select id="filterCode">
+              <option value="">Alle</option>
               <option value="Frühschicht">Frühschicht</option>
               <option value="Spätschicht">Spätschicht</option>
               <option value="Nachtschicht">Nachtschicht</option>
               <option value="Urlaub">Urlaub</option>
               <option value="Frei">Frei</option>
             </select>
-            <input id="fDate" type="date" />
-            <button class="ghost" id="btnReset">Zurücksetzen</button>
+            <button id="btnReset">Zurücksetzen</button>
           </div>
         </div>
+        <div id="calendar"></div>
 
-        <!-- (Option) Calendrier – à activer plus tard dans script.js si tu le souhaites -->
-        <div id="calendar">Kalender (Optional) – kann später aktiviert werden</div>
-
-        <!-- Tableau planning (rempli par script.js → #csvTable) -->
-        <div style="overflow:auto;margin-top:12px">
+        <h3 style="margin:16px 0 8px">Tabelle (aus CSV)</h3>
+        <div style="overflow:auto">
           <table>
             <thead id="csvHead"></thead>
-            <tbody id="csvTable"></tbody>
+            <tbody id="csvBody"></tbody>
           </table>
         </div>
       </section>
 
-      <!-- Colonne droite : Wünsche -->
+      <!-- COLONNE DROITE : WÜNSCHE -->
       <aside class="card">
-        <h2>Wünsche / Tauschen</h2>
+        <h2 style="margin-top:0">Wünsche / Tauschen</h2>
 
-        <!-- Liste des demandes -->
         <h3 style="margin:8px 0">Offene Anfragen</h3>
-        <ul id="requestsList" class="muted" style="padding-left:18px;margin:0 0 12px"></ul>
+        <div id="reqList" class="muted"></div>
 
         <hr style="border:0;border-top:1px solid var(--line);margin:12px 0" />
 
-        <!-- Formulaire d’envoi -->
         <h3 style="margin:8px 0">Neue Anfrage</h3>
         <div class="row">
           <input id="reqName" placeholder="Dein Name" style="flex:1 1 180px" />
@@ -142,42 +95,15 @@
           <input id="reqNote" placeholder="Notiz (optional)" style="flex:1 1 220px" />
         </div>
         <div class="row" style="margin-top:10px">
-          <button id="sendBtn">Anfrage senden</button>
+          <button id="btnSendReq">Anfrage senden</button>
         </div>
-
-        <p class="hint" style="margin-top:10px">
-          Beim Senden wird <strong>Requests</strong> in Google Sheets aktualisiert.
-        </p>
+        <p class="muted" style="margin-top:10px">Die Liste oben lädt automatisch nach dem Senden.</p>
       </aside>
     </div>
-
-    <p class="footer">© Klinikboard – Dienstplanung • gebaut mit Google Sheets + Apps Script + GitHub Pages</p>
   </div>
 
-  <!-- Librairies (option calendrier plus tard) -->
-  <script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.11/index.global.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@fullcalendar/core@6.1.11/locales-all.global.min.js"></script>
-
-  <!-- ⚠️ ordre important : config d’abord, logique ensuite -->
+  <!-- ordre important : config.js puis script.js -->
   <script src="config.js"></script>
-  <script>
-    // Petits hooks visuels pour les statuts (sans casser ton script.js)
-    (function attachStatusBridges(){
-      // expose deux fonctions globales pour que script.js puisse mettre à jour les puces
-      window.__setCsvOk = (ok, rows=0)=>{
-        const el = document.getElementById('statusCsv');
-        const dot = el.querySelector('.dot');
-        dot.className = 'dot ' + (ok ? 'ok' : 'bad');
-        document.getElementById('kpiRows').textContent = 'Zeilen: ' + (rows||0);
-      };
-      window.__setApiOk = (ok, open=0)=>{
-        const el = document.getElementById('statusApi');
-        const dot = el.querySelector('.dot');
-        dot.className = 'dot ' + (ok ? 'ok' : 'bad');
-        document.getElementById('kpiOpen').textContent = 'Offene Wünsche: ' + (open||0);
-      };
-    })();
-  </script>
   <script src="script.js"></script>
 </body>
 </html>
